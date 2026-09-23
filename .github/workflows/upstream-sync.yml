@@ -25,10 +25,21 @@
 # writer). Both jobs evaluate against the latest llm-agents with
 # --override-input, and publish dispatches the relock workflow.
 #
-# One-time setup: runner labels in vars.PI_SYNC_RUNNER (JSON array; a Linux
-# host with unprivileged user namespaces, which bubblewrap needs), and in the
-# `automation` environment vars.LITELLM_BASE_URL, vars.PI_SYNC_MODEL,
-# secrets.LITELLM_API_KEY, vars.GH_APP_CLIENT_ID, secrets.GH_APP_PRIVATE_KEY.
+# One-time setup:
+#   1. Repo settings (Dependabot, dependency graph) come from the org's
+#      tofu-github `config/repos.yml`; nix-pi must be listed there.
+#   2. Create the `automation` environment on this repo.
+#   3. Fill it from the secret manager, as for nix-ai's `automation`:
+#        vars.GH_APP_CLIENT_ID, secrets.GH_APP_PRIVATE_KEY (the org App, installed
+#          here with contents, pull-requests and actions write);
+#        vars.LITELLM_BASE_URL (the homelab LiteLLM /v1 URL), vars.PI_SYNC_MODEL,
+#        secrets.LITELLM_API_KEY (a virtual key scoped to that model).
+#   4. Register a Linux self-hosted runner that can reach LiteLLM, in a runner
+#      group limited to this repo, labelled self-hosted,homelab (or set
+#      vars.PI_SYNC_RUNNER to a JSON array of other labels). bubblewrap needs
+#      unprivileged user namespaces; on Ubuntu 24.04+ set
+#      kernel.apparmor_restrict_unprivileged_userns=0 in /etc/sysctl.d/.
+#   5. Test: run this workflow on main with from=0.87.0 to=0.87.1.
 
 name: Upstream sync
 
