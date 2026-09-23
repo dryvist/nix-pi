@@ -45,8 +45,8 @@ or directory under the agent directory.
 
 ## What to change
 
-- Edit only `modules/pi.nix`, `checks/default.nix`, `checks/fixtures/`,
-  `preferences.nix` and `README.md`.
+- Edit only the paths listed after this prompt (and `.upstream-sync/SUMMARY.md`).
+  A change anywhere else fails the job and nothing is published.
 - Every behaviour you add or change gets an assertion in `checks/default.nix`.
 - Match the existing style. Keep the README short.
 - If nothing affects this flake, change nothing.

@@ -47,6 +47,10 @@ concurrency:
 env:
   LATEST_LLM_AGENTS: github:numtide/llm-agents.nix
   WORK: .upstream-sync
+  # The only paths the agent may change. Anything else it touches fails the
+  # job before staging, so a prompt-injected diff cannot reach workflows,
+  # flake.lock or these scripts. The agent is told this list at run time.
+  AGENT_PATHS: modules/pi.nix checks preferences.nix README.md
 
 jobs:
   sync:
@@ -123,10 +127,10 @@ jobs:
             --no-extensions --no-skills --no-prompt-templates \
             --provider litellm --model "$PI_SYNC_MODEL" \
             --tools read,edit,write,grep,find,ls \
-            @.github/upstream-sync/prompt.md "FROM=$FROM TO=$TO"
+            @.github/upstream-sync/prompt.md "FROM=$FROM TO=$TO" "Editable paths: $AGENT_PATHS"
 
           test -s "$WORK/SUMMARY.md" || echo "The agent wrote no summary." > "$WORK/SUMMARY.md"
-          git add -A -- . ":!$WORK"
+          .github/upstream-sync/stage.sh
           if git diff --cached --quiet; then echo "changed=false"; else echo "changed=true"; fi >> "$GITHUB_OUTPUT"
 
       - name: Validate
@@ -134,6 +138,7 @@ jobs:
         if: steps.agent.outputs.changed == 'true'
         run: |
           nix fmt
+          .github/upstream-sync/stage.sh
           if nix flake check --override-input llm-agents "$LATEST_LLM_AGENTS" -L > "$RUNNER_TEMP/check.log" 2>&1; then
             echo "result=passed" >> "$GITHUB_OUTPUT"
           else
@@ -146,8 +151,11 @@ jobs:
         env:
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
         run: |
-          git add -A -- . ":!$WORK"
-          if { git diff --cached; cat "$WORK/SUMMARY.md"; } | grep -qF -- "$LITELLM_API_KEY"; then
+          # A file, not a pipe: `grep -q` in a pipeline can SIGPIPE the writer,
+          # and under pipefail a found key would then read as "not found".
+          published=$RUNNER_TEMP/published.txt
+          { git diff --cached; cat "$WORK/SUMMARY.md"; } > "$published"
+          if grep -F -- "$LITELLM_API_KEY" "$published" > /dev/null; then
             echo "::error::The LiteLLM key appears in the agent's output; nothing is published."; exit 1
           fi
 

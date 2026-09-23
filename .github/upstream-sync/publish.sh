@@ -5,7 +5,9 @@
 # and WORK in the environment.
 set -euo pipefail
 
+bot="nix-pi upstream sync"
 body=$RUNNER_TEMP/body.md
+remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
 if [ "$CHANGED" != "true" ]; then
   { cat "$WORK/SUMMARY.md"; echo; echo "No module changes needed; the version bump can merge as is."; } > "$body"
@@ -15,11 +17,26 @@ if [ "$CHANGED" != "true" ]; then
 fi
 
 branch="pi-sync/v$TO"
-git config user.name "nix-pi upstream sync"
+
+# Re-runs replace the bot's own branch, never one a person has pushed to.
+existing=$(git ls-remote "$remote" "refs/heads/$branch" | cut -f1)
+if [ -n "$existing" ]; then
+  git fetch -q --depth=1 "$remote" "$existing"
+  author=$(git log -1 --format=%an "$existing")
+  if [ "$author" != "$bot" ]; then
+    msg="\`$branch\` has commits from $author; left untouched. Delete the branch to let upstream sync regenerate it."
+    echo "::warning::$msg"
+    [ -z "$RENOVATE_PR" ] || gh pr comment "$RENOVATE_PR" --body "$msg"
+    exit 0
+  fi
+fi
+
+git config user.name "$bot"
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git switch -c "$branch"
 git commit -m "feat(pi): reconcile module with pi $TO"
-git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
+# The lease also refuses a push that lands between the check above and now.
+git push --force-with-lease="refs/heads/$branch:$existing" "$remote" "HEAD:refs/heads/$branch"
 
 {
   cat "$WORK/SUMMARY.md"
