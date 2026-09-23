@@ -1,0 +1,64 @@
+# CI Gate — the org reusable gate plus one evaluation it cannot do.
+#
+# `shared-gate` runs `nix flake check`, markdown lint, file size, zizmor and
+# dependency review. It checks the runner's system only, because
+# `--all-systems` would try to BUILD the darwin checks on Linux. `all-systems`
+# closes that gap: it evaluates every system's checks, which fires every
+# assertion in checks/default.nix without building anything.
+
+name: CI Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  shared-gate:
+    permissions:
+      contents: read
+      pull-requests: read
+      # The org gate's queue watchdog cancels stuck jobs via the Actions API.
+      actions: write
+    uses: dryvist/.github/.github/workflows/_ci-gate.yml@main
+    with:
+      all_systems: false
+      nix_validate: true
+      renovate_annotations: true
+      filters: |
+        markdown:
+          - '**.md'
+          - '.markdownlint*'
+        nix:
+          - '**.nix'
+          - 'flake.lock'
+          - 'checks/**'
+
+  all-systems:
+    name: Evaluate checks on every system
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@021c8a1bd3570eb21f5c20a054812b0c4d9ca614 # v3
+      - run: |
+          nix eval --raw .#checks --apply 'cs: builtins.concatStringsSep "\n"
+            (builtins.concatMap (s: map (c: c.drvPath) (builtins.attrValues s)) (builtins.attrValues cs))'
+
+  gate:
+    name: Merge Gate
+    needs: [shared-gate, all-systems]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

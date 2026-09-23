@@ -1,0 +1,236 @@
+# Upstream sync — turn a Renovate pi bump into our own reconciling PR.
+#
+# Renovate bumps upstream.nix (it never auto-merges that pin, see renovate.json).
+# Then:
+#   reconcile (self-hosted, homelab LiteLLM)
+#     1. diffs the two npm releases (.github/upstream-sync/diff.sh);
+#     2. has the NEW pi read that diff and edit a scratch copy of the repo
+#        (.github/upstream-sync/prompt.md holds its instructions);
+#     3. hands on only a patch and a summary, after a secret-leak check.
+#   publish (GitHub-hosted, fresh checkout)
+#     4. applies the patch, refusing anything outside AGENT_PATHS or any
+#        symlink (.github/upstream-sync/stage.sh), runs `nix fmt` and
+#        `nix flake check`;
+#     5. opens `pi-sync/v<version>` stacked on the Renovate commit, or comments
+#        "no changes needed" on the Renovate PR (.github/upstream-sync/publish.sh).
+#
+# Trust boundary. Only same-repo Renovate PRs (or a maintainer's manual
+# dispatch) reach the self-hosted runner. The upstream diff is untrusted, so
+# the agent has no shell tool, no GitHub token, and runs in a bubblewrap
+# sandbox (.github/upstream-sync/sandbox.sh) that can write only the scratch
+# copy: it cannot touch the scripts that later judge its work, which run from
+# a checkout it never saw, and publish runs them from a copy taken before the
+# patch is applied. The App token exists only in `publish`.
+#
+# flake.lock is never written here (org policy: deps-flake-lock.yml is its only
+# writer). Both jobs evaluate against the latest llm-agents with
+# --override-input, and publish dispatches the relock workflow.
+#
+# One-time setup:
+#   1. Repo settings (Dependabot, dependency graph) come from the org's
+#      tofu-github `config/repos.yml`; nix-pi must be listed there.
+#   2. Create the `automation` environment on this repo.
+#   3. Fill it from the secret manager, as for nix-ai's `automation`:
+#        vars.GH_APP_CLIENT_ID, secrets.GH_APP_PRIVATE_KEY (the org App, installed
+#          here with contents, pull-requests and actions write);
+#        vars.LITELLM_BASE_URL (the homelab LiteLLM /v1 URL), vars.PI_SYNC_MODEL,
+#        secrets.LITELLM_API_KEY (a virtual key scoped to that model).
+#   4. Register a Linux self-hosted runner that can reach LiteLLM, in a runner
+#      group limited to this repo, labelled self-hosted,homelab (or set
+#      vars.PI_SYNC_RUNNER to a JSON array of other labels). bubblewrap needs
+#      unprivileged user namespaces; on Ubuntu 24.04+ set
+#      kernel.apparmor_restrict_unprivileged_userns=0 in /etc/sysctl.d/.
+#   5. Test: run this workflow on main with from=0.87.0 to=0.87.1.
+
+name: Upstream sync
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: [upstream.nix]
+  workflow_dispatch:
+    inputs:
+      from:
+        description: pi version the module currently matches
+        required: true
+      to:
+        description: pi version to reconcile with (upstream.nix on this ref must already say it)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  LATEST_LLM_AGENTS: github:numtide/llm-agents.nix
+  WORK: .upstream-sync
+  # The only paths the agent may change; a patch touching anything else is
+  # refused in `publish`. The agent is told this list at run time.
+  AGENT_PATHS: modules/pi.nix checks preferences.nix README.md
+
+jobs:
+  reconcile:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == 'renovate[bot]')
+    runs-on: ${{ fromJSON(vars.PI_SYNC_RUNNER || '["self-hosted","homelab"]') }}
+    environment: automation
+    timeout-minutes: 90
+    outputs:
+      from: ${{ steps.versions.outputs.from }}
+      to: ${{ steps.versions.outputs.to }}
+      changed: ${{ steps.agent.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: DeterminateSystems/determinate-nix-action@021c8a1bd3570eb21f5c20a054812b0c4d9ca614 # v3
+
+      - name: Resolve versions
+        id: versions
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_FROM: ${{ inputs.from }}
+          INPUT_TO: ${{ inputs.to }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            git show "$BASE_SHA:upstream.nix" > "$RUNNER_TEMP/base-upstream.nix"
+            from=$(nix eval --raw -f "$RUNNER_TEMP/base-upstream.nix" version)
+          else
+            from=$INPUT_FROM
+          fi
+          to=$(nix eval --raw -f upstream.nix version)
+          if [ -n "$INPUT_TO" ] && [ "$INPUT_TO" != "$to" ]; then
+            echo "::error::upstream.nix on this ref says $to, not $INPUT_TO"; exit 1
+          fi
+          packaged=$(nix eval --raw --override-input llm-agents "$LATEST_LLM_AGENTS" .#pi.version)
+          echo "from=$from" "to=$to" "packaged=$packaged" | tr ' ' '\n' >> "$GITHUB_OUTPUT"
+          if [ "$packaged" != "$to" ]; then
+            echo "::notice::llm-agents packages pi $packaged, not $to yet; re-run once it catches up."
+          fi
+
+      - name: Reconcile with pi
+        id: agent
+        if: steps.versions.outputs.packaged == steps.versions.outputs.to
+        env:
+          FROM: ${{ steps.versions.outputs.from }}
+          TO: ${{ steps.versions.outputs.to }}
+          LITELLM_BASE_URL: ${{ vars.LITELLM_BASE_URL }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          PI_SYNC_MODEL: ${{ vars.PI_SYNC_MODEL }}
+        run: |
+          # The agent edits a scratch worktree, never this checkout.
+          tree=$RUNNER_TEMP/tree
+          git worktree add --detach "$tree" HEAD
+          .github/upstream-sync/diff.sh "$FROM" "$TO" "$tree/$WORK"
+
+          export PI_CODING_AGENT_DIR=$RUNNER_TEMP/pi-agent
+          mkdir -p "$PI_CODING_AGENT_DIR"
+          # apiKey is the literal "$LITELLM_API_KEY": pi resolves it from the
+          # environment at request time, so the value is never written to disk.
+          # shellcheck disable=SC2016
+          nix run nixpkgs#jq -- -n --arg url "$LITELLM_BASE_URL" --arg model "$PI_SYNC_MODEL" '{
+            providers: { litellm: {
+              baseUrl: $url, api: "openai-completions", apiKey: "$LITELLM_API_KEY",
+              models: [{ id: $model }]
+            } }
+          }' > "$PI_CODING_AGENT_DIR/models.json"
+
+          pi=$(nix build --no-link --print-out-paths --override-input llm-agents "$LATEST_LLM_AGENTS" .#pi)
+          .github/upstream-sync/sandbox.sh "$tree" "$pi/bin/pi" \
+            --print --no-session --no-approve --offline \
+            --no-extensions --no-skills --no-prompt-templates \
+            --provider litellm --model "$PI_SYNC_MODEL" \
+            --tools read,edit,write,grep,find,ls \
+            @.github/upstream-sync/prompt.md "FROM=$FROM TO=$TO" "Editable paths: $AGENT_PATHS"
+
+          out=$RUNNER_TEMP/out
+          mkdir -p "$out"
+          if [ -s "$tree/$WORK/SUMMARY.md" ]; then cp "$tree/$WORK/SUMMARY.md" "$out/"; else echo "The agent wrote no summary." > "$out/SUMMARY.md"; fi
+          # sandbox.sh kept the tree's .git read-only; no config-driven commands anyway.
+          git=(git -C "$tree" -c core.fsmonitor=false -c core.hooksPath=/dev/null)
+          "${git[@]}" add -A -N -- .
+          "${git[@]}" diff --binary --no-ext-diff --no-textconv -- . ":!$WORK" > "$out/reconcile.patch"
+          if [ -s "$out/reconcile.patch" ]; then echo "changed=true"; else echo "changed=false"; fi >> "$GITHUB_OUTPUT"
+
+          # A file, not a pipe: `grep -q` in a pipeline can SIGPIPE the writer,
+          # and under pipefail a found key would then read as "not found".
+          if grep -F -- "$LITELLM_API_KEY" "$out/reconcile.patch" "$out/SUMMARY.md" > /dev/null; then
+            echo "::error::The LiteLLM key appears in the agent's output; nothing is published."; exit 1
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.agent.outcome == 'success'
+        with:
+          name: reconcile
+          path: ${{ runner.temp }}/out/
+          retention-days: 7
+
+  publish:
+    needs: reconcile
+    if: needs.reconcile.result == 'success' && needs.reconcile.outputs.changed != ''
+    runs-on: ubuntu-latest
+    environment: automation
+    timeout-minutes: 30
+    steps:
+      # A fresh checkout: the scripts below were never within the agent's reach.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: DeterminateSystems/determinate-nix-action@021c8a1bd3570eb21f5c20a054812b0c4d9ca614 # v3
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: reconcile
+          path: ${{ runner.temp }}/in
+
+      - name: Apply and validate
+        id: validate
+        if: needs.reconcile.outputs.changed == 'true'
+        run: |
+          # The patch is untrusted and could rewrite these scripts; run a copy
+          # taken before it is applied.
+          cp -r .github/upstream-sync "$RUNNER_TEMP/trusted"
+          echo "SYNC=$RUNNER_TEMP/trusted" >> "$GITHUB_ENV"
+          git apply "$RUNNER_TEMP/in/reconcile.patch"
+          "$RUNNER_TEMP/trusted/stage.sh"
+          nix fmt
+          "$RUNNER_TEMP/trusted/stage.sh"
+          if nix flake check --override-input llm-agents "$LATEST_LLM_AGENTS" -L > "$RUNNER_TEMP/check.log" 2>&1; then
+            echo "result=passed" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+          tail -n 40 "$RUNNER_TEMP/check.log"
+
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: write
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          FROM: ${{ needs.reconcile.outputs.from }}
+          TO: ${{ needs.reconcile.outputs.to }}
+          CHANGED: ${{ needs.reconcile.outputs.changed }}
+          CHECK: ${{ steps.validate.outputs.result }}
+          SUMMARY: ${{ runner.temp }}/in/SUMMARY.md
+          RENOVATE_PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        # The trusted copy when a patch was applied; otherwise the checkout is untouched.
+        run: nix shell nixpkgs#gh --command "${SYNC:-.github/upstream-sync}/publish.sh"
