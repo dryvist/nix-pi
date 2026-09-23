@@ -112,11 +112,18 @@ let
     (expect "preferences overridable" (preferred.programs.pi.settings.quietStartup == false))
   ];
 
-  # The activation snippet, pointed at a scratch home.
-  mergeScript = pkgs.writeText "pi-settings-activation" (
-    builtins.replaceStrings [ "'${home}/" ] [ "\"$PI_TEST_HOME\"'/" ]
-      full.home.activation.piSettings.data
-  );
+  # The activation snippet, pointed at a scratch home. The assert keeps a
+  # replacement that silently stops matching from writing to the real path.
+  mergeText =
+    builtins.replaceStrings
+      [ (lib.escapeShellArg "${home}/.pi/agent/settings.json") ]
+      [ "\"$PI_TEST_HOME/.pi/agent/settings.json\"" ]
+      full.home.activation.piSettings.data;
+  mergeScript =
+    assert expect "activation targets the scratch home" (
+      lib.hasInfix "$PI_TEST_HOME" mergeText && !(lib.hasInfix home mergeText)
+    );
+    pkgs.writeText "pi-settings-activation" mergeText;
 in
 assert lib.all lib.id asserts;
 {
