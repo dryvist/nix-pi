@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["local>dryvist/.github:renovate-nix"],
+  "packageRules": [
+    {
+      "description": "The pi pin in upstream.nix. Never auto-merged: upstream-sync.yml answers each bump with its own PR that reconciles the module, and that PR is the one to merge.",
+      "matchDepNames": ["@earendil-works/pi-coding-agent"],
+      "automerge": false,
+      "labels": ["upstream-pi"]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# Relock flake.lock — the single writer of this repo's lock file (org policy,
+# dryvist/.github _update-flake-lock.yml). upstream-sync.yml dispatches it
+# when a new pi release needs a newer llm-agents pin.
+name: Update flake.lock
+
+on:
+  schedule:
+    - cron: "9 18 * * 4"
+  repository_dispatch:
+    types: [update-flake-input]
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  relock:
+    uses: dryvist/.github/.github/workflows/_update-flake-lock.yml@main
+    secrets:
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
