@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Publish the agent's work: a pi-sync PR, or a note on the Renovate PR when
 # nothing needed changing. Called by upstream-sync.yml with GH_TOKEN (the App
-# token), FROM, TO, CHANGED, CHECK, RENOVATE_PR (empty on dispatch), BASE_REF
-# and WORK in the environment.
+# token), FROM, TO, CHANGED, CHECK, SUMMARY (the agent's report), RENOVATE_PR
+# (empty on dispatch) and BASE_REF in the environment.
 set -euo pipefail
 
 bot="nix-pi upstream sync"
@@ -10,7 +10,7 @@ body=$RUNNER_TEMP/body.md
 remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
 if [ "$CHANGED" != "true" ]; then
-  { cat "$WORK/SUMMARY.md"; echo; echo "No module changes needed; the version bump can merge as is."; } > "$body"
+  { cat "$SUMMARY"; echo; echo "No module changes needed; the version bump can merge as is."; } > "$body"
   [ -z "$RENOVATE_PR" ] || gh pr comment "$RENOVATE_PR" --body-file "$body"
   gh workflow run deps-flake-lock.yml
   exit 0
@@ -39,7 +39,7 @@ git commit -m "feat(pi): reconcile module with pi $TO"
 git push --force-with-lease="refs/heads/$branch:$existing" "$remote" "HEAD:refs/heads/$branch"
 
 {
-  cat "$WORK/SUMMARY.md"
+  cat "$SUMMARY"
   echo
   echo "---"
   echo "Written by pi $TO through the homelab LiteLLM from the diff of the $FROM and $TO npm releases."

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stage the agent's work, refusing any change outside AGENT_PATHS (and the
-# WORK scratch directory). Called by upstream-sync.yml with both in the env.
+# Stage the agent's work (applied from its patch), refusing any change outside
+# AGENT_PATHS or the WORK scratch directory, and any symlink. Called by
+# upstream-sync.yml with both in the env.
 set -euo pipefail
 
 read -ra allowed <<< "$AGENT_PATHS"
@@ -16,4 +17,13 @@ if [ -n "$outside" ]; then
 fi
 
 # Everything that changed is inside the allowlist now.
-git add -A -- . ":!$WORK"
+git add -A -- .
+
+# A symlink inside the allowlist could point anywhere; the agent has no use
+# for one.
+links=$(git diff --cached --diff-filter=AMT --raw | awk '$2 == "120000" {print $6}')
+if [ -n "$links" ]; then
+  echo "::error::The agent's changes add symlinks; nothing is published:"
+  printf '%s\n' "$links"
+  exit 1
+fi

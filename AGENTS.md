@@ -30,7 +30,7 @@ own choices live in one optional file.
 | `preferences.nix` | Our non-default values (opt-in) |
 | `upstream.nix` | The pi release the module was reconciled against (Renovate-tracked) |
 | `checks/` | Home Manager fixtures with assertions, plus the settings-merge test |
-| `.github/upstream-sync/` | Release diff, agent prompt and publish script |
+| `.github/upstream-sync/` | Release diff, agent prompt, sandbox, path allowlist and publish scripts |
 
 ## Validation
 
@@ -48,10 +48,11 @@ Every behaviour gets an assertion in `checks/default.nix`.
 
 1. Renovate bumps `upstream.nix`.
 2. [`upstream-sync.yml`](.github/workflows/upstream-sync.yml) diffs the two npm
-   releases. The new pi reads that diff through the homelab LiteLLM, on a
-   self-hosted runner, and edits the module.
-3. The job opens a `pi-sync/v<version>` PR, or comments on the Renovate PR if
-   nothing needed changing.
+   releases. On a self-hosted runner, the new pi reads that diff through the
+   homelab LiteLLM and edits a sandboxed scratch copy; only a patch leaves.
+3. A GitHub-hosted job applies the patch if it stays inside the allowlist,
+   validates it, and opens a `pi-sync/v<version>` PR, or comments on the
+   Renovate PR if nothing needed changing.
 
 The trust boundary and the one-time setup (runner labels, variables and
 secrets) are documented in that workflow's header.
