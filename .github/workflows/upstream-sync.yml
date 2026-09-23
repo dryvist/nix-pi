@@ -19,7 +19,8 @@
 # the agent has no shell tool, no GitHub token, and runs in a bubblewrap
 # sandbox (.github/upstream-sync/sandbox.sh) that can write only the scratch
 # copy: it cannot touch the scripts that later judge its work, which run from
-# a checkout it never saw. The App token exists only in `publish`.
+# a checkout it never saw, and publish runs them from a copy taken before the
+# patch is applied. The App token exists only in `publish`.
 #
 # flake.lock is never written here (org policy: deps-flake-lock.yml is its only
 # writer). Both jobs evaluate against the latest llm-agents with
@@ -153,8 +154,10 @@ jobs:
           out=$RUNNER_TEMP/out
           mkdir -p "$out"
           if [ -s "$tree/$WORK/SUMMARY.md" ]; then cp "$tree/$WORK/SUMMARY.md" "$out/"; else echo "The agent wrote no summary." > "$out/SUMMARY.md"; fi
-          git -C "$tree" add -A -N -- .
-          git -C "$tree" diff --binary -- . ":!$WORK" > "$out/reconcile.patch"
+          # sandbox.sh kept the tree's .git read-only; no config-driven commands anyway.
+          git=(git -C "$tree" -c core.fsmonitor=false -c core.hooksPath=/dev/null)
+          "${git[@]}" add -A -N -- .
+          "${git[@]}" diff --binary --no-ext-diff --no-textconv -- . ":!$WORK" > "$out/reconcile.patch"
           if [ -s "$out/reconcile.patch" ]; then echo "changed=true"; else echo "changed=false"; fi >> "$GITHUB_OUTPUT"
 
           # A file, not a pipe: `grep -q` in a pipeline can SIGPIPE the writer,
@@ -195,10 +198,14 @@ jobs:
         id: validate
         if: needs.reconcile.outputs.changed == 'true'
         run: |
+          # The patch is untrusted and could rewrite these scripts; run a copy
+          # taken before it is applied.
+          cp -r .github/upstream-sync "$RUNNER_TEMP/trusted"
+          echo "SYNC=$RUNNER_TEMP/trusted" >> "$GITHUB_ENV"
           git apply "$RUNNER_TEMP/in/reconcile.patch"
-          .github/upstream-sync/stage.sh
+          "$RUNNER_TEMP/trusted/stage.sh"
           nix fmt
-          .github/upstream-sync/stage.sh
+          "$RUNNER_TEMP/trusted/stage.sh"
           if nix flake check --override-input llm-agents "$LATEST_LLM_AGENTS" -L > "$RUNNER_TEMP/check.log" 2>&1; then
             echo "result=passed" >> "$GITHUB_OUTPUT"
           else
@@ -225,4 +232,5 @@ jobs:
           SUMMARY: ${{ runner.temp }}/in/SUMMARY.md
           RENOVATE_PR: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
-        run: nix shell nixpkgs#gh --command .github/upstream-sync/publish.sh
+        # The trusted copy when a patch was applied; otherwise the checkout is untouched.
+        run: nix shell nixpkgs#gh --command "${SYNC:-.github/upstream-sync}/publish.sh"

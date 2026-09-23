@@ -9,6 +9,10 @@
 # private, the environment is cleared except for what pi needs, and only the
 # network namespace is shared (for LiteLLM). Needs unprivileged user
 # namespaces on the runner.
+#
+# TREE's `.git` stays read-only: host git later runs in TREE, and a rewritten
+# pointer to a planted repo would hand the agent that repo's config (fsmonitor,
+# diff drivers) on the host. A mount point can't be replaced, moved or removed.
 set -euo pipefail
 
 tree=$(realpath "$1")
@@ -20,6 +24,7 @@ exec nix run nixpkgs#bubblewrap -- \
   --proc /proc \
   --tmpfs /tmp \
   --bind "$tree" "$tree" \
+  --ro-bind "$tree/.git" "$tree/.git" \
   --bind "$PI_CODING_AGENT_DIR" "$PI_CODING_AGENT_DIR" \
   --unshare-all --share-net \
   --die-with-parent \
