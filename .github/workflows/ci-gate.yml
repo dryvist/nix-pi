@@ -33,9 +33,6 @@ jobs:
     uses: dryvist/.github/.github/workflows/_ci-gate.yml@main
     with:
       nix_validate: true
-      # The checks build only on the runner's own system; flake.nix evaluates
-      # the other systems' checks as part of that run.
-      all_systems: false
       renovate_annotations: true
       filters: |
         markdown:

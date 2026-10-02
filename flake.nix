@@ -1,5 +1,5 @@
 {
-  description = "pi coding agent package and Home Manager options for its agent-dir resources";
+  description = "Template and Home Manager options for pi, the coding agent";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -8,7 +8,7 @@
     # is what cache.numtide.com has built, so following ours forfeits the cache.
     llm-agents.url = "github:numtide/llm-agents.nix";
 
-    # Used only by `checks` to evaluate the module in a real Home Manager.
+    # Used only by `checks` to evaluate the module and template in a real Home Manager.
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -60,17 +60,24 @@
           };
       };
 
-      checks =
-        let
-          perSystem = forAllSystems (pkgs: import ./checks { inherit pkgs self home-manager; });
-          # `nix flake check` builds only the runner's own system. Forcing every
-          # system's derivation path evaluates the other systems' checks too
-          # (no builds), which fires their assertions in the same run.
-          drvPaths = lib.concatMap (cs: map (drv: drv.drvPath) (lib.attrValues cs)) (
-            lib.attrValues perSystem
-          );
-        in
-        lib.mapAttrs (_: lib.mapAttrs (_: drv: builtins.deepSeq drvPaths drv)) perSystem;
+      # A Home Manager flake to start from: `nix flake init -t github:dryvist/nix-pi`.
+      templates.default = {
+        path = ./templates/default;
+        description = "Home Manager configuration for pi";
+      };
+
+      # Evaluates the module and the template in a real Home Manager.
+      checks = forAllSystems (
+        pkgs:
+        import ./checks {
+          inherit
+            pkgs
+            self
+            nixpkgs
+            home-manager
+            ;
+        }
+      );
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-tree);
     };

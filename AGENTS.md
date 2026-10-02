@@ -4,7 +4,8 @@ skill-groups: [core, nix]
 
 # nix-pi - AI Agent Instructions
 
-The numtide/llm-agents.nix build of pi, plus Home Manager options that
+A reference Home Manager template for pi (`templates/default`), the
+numtide/llm-agents.nix build of pi, and Home Manager options that
 Home Manager's `programs.pi-coding-agent` module lacks.
 
 ## Rules
@@ -19,27 +20,26 @@ Home Manager's `programs.pi-coding-agent` module lacks.
 2. **No scripts.** No `writeShellApplication`, activation entry or inline shell.
    Use native Nix, Home Manager and Renovate mechanisms.
 3. **Docs, not opinions.** Module defaults are pi's defaults.
-4. **One writer for flake.lock:** `deps-flake-lock.yml` (org policy).
-5. Flakes only; conventional commits; branch off `main`.
+4. **The template is for anyone.** Each setting commented and linked to its docs; no
+   values specific to any environment; no API keys inline; none of this
+   repository's maintainer files (`.github`, `renovate.json`, `AGENTS.md`).
+5. **One version source.** pi's version is the `llm-agents` input in
+   `flake.lock`; its only writer is `deps-flake-lock.yml` (org policy).
+6. Flakes only; conventional commits; branch off `main`.
 
 ## Layout
 
 | Path | Holds |
 | --- | --- |
 | `modules/pi.nix` | Options added to `programs.pi-coding-agent` |
-| `upstream.nix` | The pi release the module was reconciled against (Renovate-tracked) |
-| `checks/` | Home Manager fixtures with assertions |
+| `templates/default/` | The `nix flake init -t` template |
+| `checks/` | Home Manager fixtures and the template, with assertions |
 
 ## Validation
 
 ```bash
 nix fmt
-nix flake check --all-systems --no-build   # evaluates every system's outputs and assertions
+nix flake check --all-systems   # evaluates every system's outputs and assertions
 ```
 
 Every behaviour gets an evaluation-time assertion in `checks/default.nix`.
-
-## Upstream releases
-
-Renovate bumps `upstream.nix` and opens a PR (labelled `upstream-pi`, never
-auto-merged). Merge it once the module and README match the new pi release.

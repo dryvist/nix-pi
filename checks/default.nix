@@ -1,8 +1,9 @@
-# Evaluates the module inside a real Home Manager and asserts on its output.
-# Every assertion is evaluated; nothing builds pi.
+# Evaluates the module and the template inside a real Home Manager and asserts
+# on their output. Every assertion is evaluated; nothing builds pi.
 {
   pkgs,
   self,
+  nixpkgs,
   home-manager,
 }:
 let
@@ -55,6 +56,14 @@ let
     }
   ];
 
+  # The template exactly as `nix flake init -t` copies it, with this flake as nix-pi.
+  template =
+    ((import ../templates/default/flake.nix).outputs {
+      inherit nixpkgs home-manager;
+      nix-pi = self;
+    }).homeConfigurations.me;
+  templateDir = "/home/me/.pi/agent";
+
   expect = name: cond: lib.assertMsg cond "nix-pi check failed: ${name}";
 
   asserts = [
@@ -83,6 +92,18 @@ let
     # Files follow Home Manager's configDir.
     (expect "configDir moves files" (
       builtins.attrNames (filesUnder "${home}/.config/pi" movedDir) == [ "${home}/.config/pi/SYSTEM.md" ]
+    ))
+
+    # Template: a complete Home Manager configuration writing the documented files.
+    (expect "template files evaluate" (lib.isString template.config.home-files.drvPath))
+    (expect "template file set" (
+      builtins.attrNames (filesUnder templateDir template.config) == map (f: "${templateDir}/${f}") [
+        "AGENTS.md"
+        "models.json"
+        "prompts/review.md"
+        "settings.json"
+        "skills/commit/SKILL.md"
+      ]
     ))
   ];
 in

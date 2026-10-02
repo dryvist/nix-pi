@@ -1,12 +1,4 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>dryvist/.github:renovate-nix"],
-  "packageRules": [
-    {
-      "description": "The pi pin in upstream.nix is reviewed, not auto-merged.",
-      "matchDepNames": ["@earendil-works/pi-coding-agent"],
-      "automerge": false,
-      "labels": ["upstream-pi"]
-    }
-  ]
+  "extends": ["local>dryvist/.github:renovate-nix"]
 }
