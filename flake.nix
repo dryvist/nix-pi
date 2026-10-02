@@ -1,5 +1,5 @@
 {
-  description = "Home Manager module for the pi coding agent";
+  description = "pi coding agent package and Home Manager options for its agent-dir resources";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -44,20 +44,17 @@
         default = pi;
       });
 
-      overlays.default = final: _prev: {
-        pi-coding-agent = piFor final.stdenv.hostPlatform.system;
-      };
-
       homeModules = {
-        # The module alone. `package` defaults to nixpkgs' pi-coding-agent.
-        pi.imports = [ ./modules/pi.nix ];
+        # Home Manager's programs.pi-coding-agent gains options for the agent-dir
+        # files it does not manage. Its `package` stays nixpkgs' pi-coding-agent.
+        pi-coding-agent.imports = [ ./modules/pi.nix ];
 
-        # The module with `package` defaulting to this flake's pi.
+        # The same, with `package` defaulting to this flake's pi.
         default =
           { lib, pkgs, ... }:
           {
-            imports = [ self.homeModules.pi ];
-            programs.pi.package = lib.mkDefault (
+            imports = [ self.homeModules.pi-coding-agent ];
+            programs.pi-coding-agent.package = lib.mkDefault (
               self.packages.${pkgs.stdenv.hostPlatform.system}.pi or pkgs.pi-coding-agent
             );
           };

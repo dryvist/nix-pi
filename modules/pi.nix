@@ -1,17 +1,14 @@
-# Home Manager module for pi. Every file here is one pi documents; see
+# Adds to Home Manager's programs.pi-coding-agent the agent-dir files it does
+# not manage. Every file here is one pi documents; see
 # https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 let
-  cfg = config.programs.pi;
-  json = pkgs.formats.json { };
+  cfg = config.programs.pi-coding-agent;
   docs = page: "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/${page}";
-
-  agentDir = "${config.home.homeDirectory}/${cfg.configDir}";
 
   textOrPath = lib.types.either lib.types.lines lib.types.path;
 
@@ -20,22 +17,6 @@ let
     value:
     if builtins.isPath value || lib.isStorePath value then { source = value; } else { text = value; };
 
-  jsonOption =
-    file: page:
-    lib.mkOption {
-      inherit (json) type;
-      default = { };
-      description = "Contents of `${file}`. See ${docs page}.";
-    };
-
-  textOption =
-    file: page:
-    lib.mkOption {
-      type = lib.types.nullOr textOrPath;
-      default = null;
-      description = "Contents of `${file}`, as text or a path. See ${docs page}.";
-    };
-
   resourceOption =
     dir: page: example:
     lib.mkOption {
@@ -43,9 +24,10 @@ let
       default = { };
       example = lib.literalExpression example;
       description = ''
-        Entries placed under `${dir}/`, keyed by their path there. A path value
-        (file or directory) is linked; a string is written as a file.
-        See ${docs page}.
+        Entries placed under `${dir}/` in
+        {option}`programs.pi-coding-agent.configDir`, keyed by their path
+        there. A path value (file or directory) is linked; a string is
+        written as a file. See ${docs page}.
       '';
     };
 
@@ -58,26 +40,17 @@ let
   ];
 in
 {
-  options.programs.pi = {
-    enable = lib.mkEnableOption "the pi coding agent";
-
-    package = lib.mkPackageOption pkgs "pi-coding-agent" { nullable = true; };
-
-    configDir = lib.mkOption {
-      type = lib.types.str;
-      default = ".pi/agent";
+  options.programs.pi-coding-agent = {
+    system = lib.mkOption {
+      type = lib.types.nullOr textOrPath;
+      default = null;
+      example = lib.literalExpression "./pi-system.md";
       description = ''
-        Agent directory, relative to the home directory. A value other than the
-        default is exported as `PI_CODING_AGENT_DIR`.
+        Replacement for pi's system prompt, as text or a path, written to
+        {file}`SYSTEM.md` in {option}`programs.pi-coding-agent.configDir`.
+        See ${docs "configuration.md"}.
       '';
     };
-
-    models = jsonOption "models.json" "models.md";
-    keybindings = jsonOption "keybindings.json" "keybindings.md";
-
-    context = textOption "AGENTS.md" "configuration.md";
-    systemPrompt = textOption "SYSTEM.md" "configuration.md";
-    appendSystemPrompt = textOption "APPEND_SYSTEM.md" "configuration.md";
 
     skills = resourceOption "skills" "skills.md" "{ review = ./skills/review; }";
     prompts = resourceOption "prompts" "prompt-templates.md" ''{ "review.md" = ./review.md; }'';
@@ -86,40 +59,16 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = !(config.programs.pi-coding-agent.enable or false);
-        message = "programs.pi and programs.pi-coding-agent both manage pi's agent directory; enable one.";
-      }
-    ];
-
-    home = {
-      packages = lib.optional (cfg.package != null) cfg.package;
-
-      sessionVariables = lib.mkIf (cfg.configDir != ".pi/agent") {
-        PI_CODING_AGENT_DIR = agentDir;
-      };
-
-      file =
-        let
-          at = name: "${cfg.configDir}/${name}";
-          jsonFile =
-            name: value:
-            lib.optionalAttrs (value != { }) { ${at name}.source = json.generate "pi-${name}" value; };
-          textFile = name: value: lib.optionalAttrs (value != null) { ${at name} = fileFrom value; };
-          resources = lib.mergeAttrsList (
-            map (
-              dir:
-              lib.mapAttrs' (name: value: lib.nameValuePair (at "${dir}/${name}") (fileFrom value)) cfg.${dir}
-            ) resourceDirs
-          );
-        in
-        jsonFile "models.json" cfg.models
-        // jsonFile "keybindings.json" cfg.keybindings
-        // textFile "AGENTS.md" cfg.context
-        // textFile "SYSTEM.md" cfg.systemPrompt
-        // textFile "APPEND_SYSTEM.md" cfg.appendSystemPrompt
-        // resources;
-    };
+    home.file =
+      let
+        at = name: "${cfg.configDir}/${name}";
+      in
+      lib.mergeAttrsList (
+        lib.optional (cfg.system != null) { ${at "SYSTEM.md"} = fileFrom cfg.system; }
+        ++ map (
+          dir:
+          lib.mapAttrs' (name: value: lib.nameValuePair (at "${dir}/${name}") (fileFrom value)) cfg.${dir}
+        ) resourceDirs
+      );
   };
 }

@@ -1,7 +1,9 @@
 # nix-pi
 
-[pi](https://pi.dev) (the coding agent) for Nix. Home Manager writes pi's
-config files, and pi keeps full control of its own `settings.json`.
+[pi](https://pi.dev) (the coding agent) for Nix: the
+[numtide/llm-agents.nix](https://github.com/numtide/llm-agents.nix) build of pi,
+and Home Manager options for the agent-dir files that Home Manager's own
+`programs.pi-coding-agent` module does not manage.
 
 ## Installation
 
@@ -22,27 +24,30 @@ Or add it to your Home Manager flake:
 }
 ```
 
+`homeModules.default` sets `programs.pi-coding-agent.package` to this flake's
+pi. `homeModules.pi-coding-agent` adds only the options below and keeps
+nixpkgs' `pi-coding-agent`.
+
 ## Usage
 
+Home Manager's `programs.pi-coding-agent` covers `settings`, `models`,
+`keybindings`, `context` (`AGENTS.md`), `appendSystem`, `configDir` and
+`extraPackages`. This flake adds:
+
 ```nix
-programs.pi = {
+programs.pi-coding-agent = {
   enable = true;
-  models.providers.local = {
-    baseUrl = "http://127.0.0.1:8080/v1";
-    api = "openai-completions";
-    apiKey = "$LOCAL_API_KEY"; # read from the environment when pi runs
-    models = [ { id = "qwen3-coder"; } ];
-  };
+  system = ./SYSTEM.md;               # replaces pi's system prompt
+  skills.review = ./skills/review;    # skills/review
+  prompts."review.md" = "Review this."; # prompts/review.md
+  extensions."hello.ts" = ./hello.ts; # extensions/hello.ts
+  themes."my-theme.json" = ./my-theme.json; # themes/my-theme.json
 };
 ```
 
-Each option writes one of the files in
-[pi's docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md):
-`models`, `keybindings`, `context` (`AGENTS.md`), `systemPrompt`,
-`appendSystemPrompt`, `skills`, `prompts`, `extensions` and `themes`.
-
-`settings.json` is not managed: pi has no layered or read-only settings file,
-and it rewrites that file itself (`/settings`, `pi install`).
+Each writes the file pi documents in
+[its configuration docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md),
+under `programs.pi-coding-agent.configDir`.
 
 ## Contributing
 
