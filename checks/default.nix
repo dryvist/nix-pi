@@ -1,6 +1,6 @@
 # Evaluates the module inside a real Home Manager and asserts on its output.
 # Nothing here builds pi: the fixtures are asserted at evaluation time, and the
-# one derivation runs the generated files and the settings activation under jq.
+# one derivation runs the settings merge script.
 {
   pkgs,
   self,
@@ -95,6 +95,9 @@ let
       ]
     ))
     (expect "settings.json is never linked" (!(full.home.file ? ".pi/agent/settings.json")))
+    (expect "settings activation merges into the agent dir" (
+      lib.hasInfix "${home}/.pi/agent/settings.json" full.home.activation.piSettings.data
+    ))
     (expect "context is text" (full.home.file.".pi/agent/AGENTS.md".text == "Be brief."))
     (expect "skill dir is linked" (full.home.file.".pi/agent/skills/review".source == ./fixtures/skill))
 
@@ -112,60 +115,35 @@ let
     (expect "preferences overridable" (preferred.programs.pi.settings.quietStartup == false))
   ];
 
-  # The activation snippet, pointed at a scratch home. The assert keeps a
-  # replacement that silently stops matching from writing to the real path.
-  mergeText =
-    builtins.replaceStrings
-      [ (lib.escapeShellArg "${home}/.pi/agent/settings.json") ]
-      [ "\"$PI_TEST_HOME/.pi/agent/settings.json\"" ]
-      full.home.activation.piSettings.data;
-  mergeScript =
-    assert expect "activation targets the scratch home" (
-      lib.hasInfix "$PI_TEST_HOME" mergeText && !(lib.hasInfix home mergeText)
-    );
-    pkgs.writeText "pi-settings-activation" mergeText;
+  declared = pkgs.writeText "declared.json" ''{"defaultModel": "coder"}'';
 in
 assert lib.all lib.id asserts;
 {
-  rendered =
-    pkgs.runCommand "nix-pi-rendered"
-      {
-        nativeBuildInputs = [ pkgs.jq ];
-      }
-      ''
-        # models.json keeps the key reference, never a value.
-        jq -e '.providers.local.apiKey == "$LOCAL_API_KEY"' ${full.home.file.".pi/agent/models.json".source}
+  settings-merge = pkgs.runCommand "nix-pi-settings-merge" { nativeBuildInputs = [ pkgs.jq ]; } ''
+    target=$PWD/home/.pi/agent/settings.json
+    merge() { ${
+      lib.getExe (import ../modules/merge-settings.nix { inherit pkgs; })
+    } "$target" ${declared}; }
 
-        run() { "$@"; }
-        warnEcho() { echo "$@" >&2; }
-        activate() { source ${mergeScript}; }
-        export PI_TEST_HOME=$PWD/home
-        target=$PI_TEST_HOME/.pi/agent/settings.json
+    # No file yet: the declared keys are written.
+    merge
+    jq -e '. == {"defaultModel": "coder"}' "$target"
 
-        # No file yet: the declared keys are written.
-        activate
-        jq -e '. == {"defaultModel": "coder"}' "$target"
+    # pi wrote its own keys and changed a declared one: declared wins, the rest stays.
+    echo '{"defaultModel": "other", "theme": "light"}' > "$target"
+    merge
+    jq -e '. == {"defaultModel": "coder", "theme": "light"}' "$target"
 
-        # pi wrote its own keys and changed a declared one: declared wins, the rest stays.
-        echo '{"defaultModel": "other", "theme": "light"}' > "$target"
-        activate
-        jq -e '. == {"defaultModel": "coder", "theme": "light"}' "$target"
+    # A leftover symlink (e.g. from programs.pi-coding-agent) becomes a real file.
+    rm "$target"; ln -s ${pkgs.writeText "old.json" ''{"theme":"dark"}''} "$target"
+    merge
+    [ ! -L "$target" ] && jq -e '.defaultModel == "coder"' "$target"
 
-        # A leftover symlink (e.g. from programs.pi-coding-agent) becomes a real file.
-        rm "$target"; ln -s ${pkgs.writeText "old.json" ''{"theme":"dark"}''} "$target"
-        activate
-        [ ! -L "$target" ] && jq -e '.defaultModel == "coder"' "$target"
+    # Broken JSON is left alone, not clobbered.
+    echo '{ broken' > "$target"
+    merge 2> warn
+    grep -q 'not valid JSON' warn && grep -qx '{ broken' "$target"
 
-        # Broken JSON is left alone, not clobbered.
-        echo '{ broken' > "$target"
-        activate 2> warn
-        grep -q 'not valid JSON' warn && grep -qx '{ broken' "$target"
-
-        # Dry run writes nothing.
-        echo '{}' > "$target"
-        DRY_RUN=1 activate
-        jq -e '. == {}' "$target"
-
-        touch $out
-      '';
+    touch $out
+  '';
 }

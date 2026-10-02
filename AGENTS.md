@@ -12,47 +12,38 @@ own choices live in one optional file.
 1. **Build nothing that exists.** The package is numtide/llm-agents.nix's `pi`,
    which is re-exported and not rebuilt. nixpkgs ships `pi-coding-agent`, and
    home-manager ships `programs.pi-coding-agent`. This flake adds only what
-   those lack: a merged `settings.json`, options for every agent-dir resource,
-   and the upstream sync. Anything that belongs upstream should be proposed
-   upstream.
-2. **Docs, not opinions.** Module defaults are pi's defaults. Any deviation
+   those lack: a merged `settings.json` and options for every agent-dir
+   resource. Anything that belongs upstream should be proposed upstream.
+2. **No custom scripts.** Use native Nix, Home Manager and Renovate mechanisms.
+   The one script is `modules/merge-settings.nix`: Home Manager has no option
+   for a file the program also writes.
+3. **Docs, not opinions.** Module defaults are pi's defaults. Any deviation
    goes in `preferences.nix`, applied only through `homeModules.preferences`.
-3. **Freeform JSON.** `settings`, `models` and `keybindings` follow RFC 42.
+4. **Freeform JSON.** `settings`, `models` and `keybindings` follow RFC 42.
    Add an option only for a new file or directory in the agent dir.
-4. **One writer for flake.lock:** `deps-flake-lock.yml` (org policy).
-5. Flakes only; conventional commits; branch off `main`.
+5. **One writer for flake.lock:** `deps-flake-lock.yml` (org policy).
+6. Flakes only; conventional commits; branch off `main`.
 
 ## Layout
 
 | Path | Holds |
 | --- | --- |
 | `modules/pi.nix` | The `programs.pi` module |
+| `modules/merge-settings.nix` | The `settings.json` merge script |
 | `preferences.nix` | Our non-default values (opt-in) |
 | `upstream.nix` | The pi release the module was reconciled against (Renovate-tracked) |
 | `checks/` | Home Manager fixtures with assertions, plus the settings-merge test |
-| `.github/upstream-sync/` | Release diff, agent prompt, sandbox, path allowlist and publish scripts |
 
 ## Validation
 
 ```bash
 nix fmt
-nix flake check
-# every system's assertions, no builds (what CI's all-systems job runs):
-nix eval --raw .#checks --apply 'cs: builtins.concatStringsSep "\n"
-  (builtins.concatMap (s: map (c: c.drvPath) (builtins.attrValues s)) (builtins.attrValues cs))'
+nix flake check   # also evaluates every other system's checks, without building
 ```
 
 Every behaviour gets an assertion in `checks/default.nix`.
 
-## Upstream sync
+## Upstream releases
 
-1. Renovate bumps `upstream.nix`.
-2. [`upstream-sync.yml`](.github/workflows/upstream-sync.yml) diffs the two npm
-   releases. On a self-hosted runner, the new pi reads that diff through the
-   homelab LiteLLM and edits a sandboxed scratch copy; only a patch leaves.
-3. A GitHub-hosted job applies the patch if it stays inside the allowlist,
-   validates it, and opens a `pi-sync/v<version>` PR, or comments on the
-   Renovate PR if nothing needed changing.
-
-The trust boundary and the one-time setup (runner labels, variables and
-secrets) are documented in that workflow's header.
+Renovate bumps `upstream.nix` and opens a PR (labelled `upstream-pi`, never
+auto-merged). Merge it once the module and README match the new pi release.

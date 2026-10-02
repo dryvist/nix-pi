@@ -13,6 +13,7 @@ let
 
   agentDir = "${config.home.homeDirectory}/${cfg.configDir}";
   settingsFile = json.generate "pi-settings.json" cfg.settings;
+  mergeSettings = lib.getExe (import ./merge-settings.nix { inherit pkgs; });
 
   textOrPath = lib.types.either lib.types.lines lib.types.path;
 
@@ -141,18 +142,8 @@ in
 
       activation.piSettings = lib.mkIf (cfg.settings != { }) (
         lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-          target=${lib.escapeShellArg "${agentDir}/settings.json"}
-          run mkdir -p "$(dirname "$target")"
-          if [ -L "$target" ]; then run rm "$target"; fi
-          if [ -s "$target" ]; then
-            if merged=$(${lib.getExe pkgs.jq} -s '.[0] * .[1]' "$target" ${settingsFile}); then
-              [ -v DRY_RUN ] || printf '%s\n' "$merged" > "$target"
-            else
-              warnEcho "pi: $target is not valid JSON; left unchanged"
-            fi
-          else
-            run install -m 644 ${settingsFile} "$target"
-          fi
+          run ${mergeSettings} \
+            ${lib.escapeShellArg "${agentDir}/settings.json"} ${settingsFile}
         ''
       );
     };

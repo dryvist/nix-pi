@@ -4,6 +4,3 @@ result-*
 .envrc.local
 
 .DS_Store
-
-# upstream-sync working directory
-.upstream-sync/

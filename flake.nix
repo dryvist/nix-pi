@@ -50,7 +50,7 @@
 
       homeModules = {
         # The module alone. `package` defaults to nixpkgs' pi-coding-agent.
-        pi = ./modules/pi.nix;
+        pi.imports = [ ./modules/pi.nix ];
 
         # The module with `package` defaulting to this flake's pi.
         default =
@@ -75,7 +75,17 @@
         upstream = import ./upstream.nix;
       };
 
-      checks = forAllSystems (pkgs: import ./checks { inherit pkgs self home-manager; });
+      checks =
+        let
+          perSystem = forAllSystems (pkgs: import ./checks { inherit pkgs self home-manager; });
+          # `nix flake check` builds only the runner's own system. Forcing every
+          # system's derivation path evaluates the other systems' checks too
+          # (no builds), which fires their assertions in the same run.
+          drvPaths = lib.concatMap (cs: map (drv: drv.drvPath) (lib.attrValues cs)) (
+            lib.attrValues perSystem
+          );
+        in
+        lib.mapAttrs (_: lib.mapAttrs (_: drv: builtins.deepSeq drvPaths drv)) perSystem;
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-tree);
     };
