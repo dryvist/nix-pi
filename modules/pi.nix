@@ -12,8 +12,6 @@ let
   docs = page: "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/${page}";
 
   agentDir = "${config.home.homeDirectory}/${cfg.configDir}";
-  settingsFile = json.generate "pi-settings.json" cfg.settings;
-  mergeSettings = lib.getExe (import ./merge-settings.nix { inherit pkgs; });
 
   textOrPath = lib.types.either lib.types.lines lib.types.path;
 
@@ -74,23 +72,6 @@ in
       '';
     };
 
-    settings = lib.mkOption {
-      inherit (json) type;
-      default = { };
-      example = {
-        defaultThinkingLevel = "high";
-        quietStartup = true;
-      };
-      description = ''
-        Keys for `settings.json`. See ${docs "settings.md"}.
-
-        pi writes this file itself (`/settings`, `pi install`), so it is merged,
-        not linked: on each activation these keys overwrite the same keys in
-        the existing file and every other key is kept. A key removed here is
-        not removed from the file.
-      '';
-    };
-
     models = jsonOption "models.json" "models.md";
     keybindings = jsonOption "keybindings.json" "keybindings.md";
 
@@ -139,13 +120,6 @@ in
         // textFile "SYSTEM.md" cfg.systemPrompt
         // textFile "APPEND_SYSTEM.md" cfg.appendSystemPrompt
         // resources;
-
-      activation.piSettings = lib.mkIf (cfg.settings != { }) (
-        lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-          run ${mergeSettings} \
-            ${lib.escapeShellArg "${agentDir}/settings.json"} ${settingsFile}
-        ''
-      );
     };
   };
 }

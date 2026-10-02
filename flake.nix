@@ -61,11 +61,6 @@
               self.packages.${pkgs.stdenv.hostPlatform.system}.pi or pkgs.pi-coding-agent
             );
           };
-
-        # Our non-default choices, every value overridable. See ./preferences.nix.
-        preferences = {
-          programs.pi = lib.mapAttrsRecursive (_: lib.mkDefault) (import ./preferences.nix);
-        };
       };
 
       checks =

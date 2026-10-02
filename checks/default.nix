@@ -1,6 +1,5 @@
 # Evaluates the module inside a real Home Manager and asserts on its output.
-# Nothing here builds pi: the fixtures are asserted at evaluation time, and the
-# one derivation runs the settings merge script.
+# Every assertion is evaluated; nothing builds pi.
 {
   pkgs,
   self,
@@ -38,7 +37,6 @@ let
   full = eval [
     {
       programs.pi = {
-        settings.defaultModel = "coder";
         models.providers.local = {
           baseUrl = "http://127.0.0.1:8080/v1";
           api = "openai-completions";
@@ -59,11 +57,6 @@ let
 
   movedDir = eval [ { programs.pi.configDir = ".config/pi"; } ];
 
-  preferred = eval [
-    self.homeModules.preferences
-    { programs.pi.settings.quietStartup = false; }
-  ];
-
   # Home Manager's own module for pi writes the same directory; enabling both
   # must fail (Home Manager throws failed assertions on any config access).
   conflict = eval [ { programs.pi-coding-agent.enable = true; } ];
@@ -75,7 +68,6 @@ let
     (expect "bare installs pi" (hasPi bare))
     (expect "package = null installs nothing" (!(hasPi noPackage)))
     (expect "bare writes no files" (piFiles bare == { }))
-    (expect "bare has no settings activation" (!(bare.home.activation ? piSettings)))
     (expect "bare leaves PI_CODING_AGENT_DIR unset" (
       !(bare.home.sessionVariables ? PI_CODING_AGENT_DIR)
     ))
@@ -94,10 +86,8 @@ let
         ".pi/agent/themes/plain.json"
       ]
     ))
-    (expect "settings.json is never linked" (!(full.home.file ? ".pi/agent/settings.json")))
-    (expect "settings activation merges into the agent dir" (
-      lib.hasInfix "${home}/.pi/agent/settings.json" full.home.activation.piSettings.data
-    ))
+    (expect "settings.json is left to pi" (!(full.home.file ? ".pi/agent/settings.json")))
+    (expect "no pi activation entry" (!(full.home.activation ? piSettings)))
     (expect "context is text" (full.home.file.".pi/agent/AGENTS.md".text == "Be brief."))
     (expect "skill dir is linked" (full.home.file.".pi/agent/skills/review".source == ./fixtures/skill))
 
@@ -109,41 +99,10 @@ let
     (expect "configDir exported" (
       movedDir.home.sessionVariables.PI_CODING_AGENT_DIR == "${home}/.config/pi"
     ))
-
-    # Preferences apply, and one of them is overridden.
-    (expect "preferences applied" (preferred.programs.pi.settings.defaultThinkingLevel == "high"))
-    (expect "preferences overridable" (preferred.programs.pi.settings.quietStartup == false))
   ];
-
-  declared = pkgs.writeText "declared.json" ''{"defaultModel": "coder"}'';
 in
 assert lib.all lib.id asserts;
 {
-  settings-merge = pkgs.runCommand "nix-pi-settings-merge" { nativeBuildInputs = [ pkgs.jq ]; } ''
-    target=$PWD/home/.pi/agent/settings.json
-    merge() { ${
-      lib.getExe (import ../modules/merge-settings.nix { inherit pkgs; })
-    } "$target" ${declared}; }
-
-    # No file yet: the declared keys are written.
-    merge
-    jq -e '. == {"defaultModel": "coder"}' "$target"
-
-    # pi wrote its own keys and changed a declared one: declared wins, the rest stays.
-    echo '{"defaultModel": "other", "theme": "light"}' > "$target"
-    merge
-    jq -e '. == {"defaultModel": "coder", "theme": "light"}' "$target"
-
-    # A leftover symlink (e.g. from programs.pi-coding-agent) becomes a real file.
-    rm "$target"; ln -s ${pkgs.writeText "old.json" ''{"theme":"dark"}''} "$target"
-    merge
-    [ ! -L "$target" ] && jq -e '.defaultModel == "coder"' "$target"
-
-    # Broken JSON is left alone, not clobbered.
-    echo '{ broken' > "$target"
-    merge 2> warn
-    grep -q 'not valid JSON' warn && grep -qx '{ broken' "$target"
-
-    touch $out
-  '';
+  # Evaluation-time assertions only; a trivial derivation carries them into `nix flake check`.
+  module = pkgs.emptyFile;
 }

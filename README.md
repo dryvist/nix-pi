@@ -1,7 +1,7 @@
 # nix-pi
 
 [pi](https://pi.dev) (the coding agent) for Nix. Home Manager writes pi's
-config files, and pi is still free to edit its own settings.
+config files, and pi keeps full control of its own `settings.json`.
 
 ## Installation
 
@@ -27,7 +27,6 @@ Or add it to your Home Manager flake:
 ```nix
 programs.pi = {
   enable = true;
-  settings.defaultThinkingLevel = "high";
   models.providers.local = {
     baseUrl = "http://127.0.0.1:8080/v1";
     api = "openai-completions";
@@ -39,15 +38,11 @@ programs.pi = {
 
 Each option writes one of the files in
 [pi's docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md):
-`settings`, `models`, `keybindings`, `context` (`AGENTS.md`), `systemPrompt`,
+`models`, `keybindings`, `context` (`AGENTS.md`), `systemPrompt`,
 `appendSystemPrompt`, `skills`, `prompts`, `extensions` and `themes`.
 
-`settings.json` is merged rather than linked. On each switch, the keys you set
-replace the same keys in the file, and anything pi wrote itself stays.
-
-To use our preferences as well, import `inputs.nix-pi.homeModules.preferences`.
-They are listed in [`preferences.nix`](preferences.nix), and you can override
-any of them.
+`settings.json` is not managed: pi has no layered or read-only settings file,
+and it rewrites that file itself (`/settings`, `pi install`).
 
 ## Contributing
 
