@@ -64,15 +64,8 @@
 
         # Our non-default choices, every value overridable. See ./preferences.nix.
         preferences = {
-          programs.pi = lib.mapAttrsRecursive (_: lib.mkDefault) self.lib.preferences;
+          programs.pi = lib.mapAttrsRecursive (_: lib.mkDefault) (import ./preferences.nix);
         };
-      };
-
-      homeManagerModules = lib.warn "nix-pi: `homeManagerModules` is renamed to `homeModules`" self.homeModules;
-
-      lib = {
-        preferences = import ./preferences.nix;
-        upstream = import ./upstream.nix;
       };
 
       checks =

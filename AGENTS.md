@@ -38,7 +38,8 @@ own choices live in one optional file.
 
 ```bash
 nix fmt
-nix flake check   # also evaluates every other system's checks, without building
+nix flake check --all-systems --no-build   # evaluates every system's outputs and assertions
+nix build .#checks.<your-system>.settings-merge
 ```
 
 Every behaviour gets an assertion in `checks/default.nix`.
