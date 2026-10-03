@@ -1,0 +1,16 @@
+# Relock flake.lock — the single writer of this repo's lock file (org policy,
+# dryvist/.github _update-flake-lock.yml).
+name: Update flake.lock
+
+on:
+  schedule:
+    - cron: "9 18 * * 4"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  relock:
+    uses: dryvist/.github/.github/workflows/_update-flake-lock.yml@main
+    secrets:
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
