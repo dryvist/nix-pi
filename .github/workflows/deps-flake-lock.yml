@@ -11,6 +11,6 @@ permissions: {}
 
 jobs:
   relock:
-    uses: dryvist/.github/.github/workflows/_update-flake-lock.yml@main
+    uses: dryvist/.github/.github/workflows/_update-flake-lock.yml@v1
     secrets:
       GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
