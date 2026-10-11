@@ -18,7 +18,7 @@
 
     # pi's package and the skills/prompts/system options used below.
     nix-pi = {
-      url = "github:dryvist/nix-pi";
+      url = "github:dryvist/nix-pi?ref=v1";
       inputs.nixpkgs.follows = "nixpkgs"; # deduplicate; pi itself keeps its own pin
       inputs.home-manager.follows = "home-manager"; # deduplicate
     };
