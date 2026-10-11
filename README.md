@@ -9,7 +9,7 @@ files Home Manager does not manage yet.
 Start a new configuration from the template:
 
 ```sh
-nix flake init -t github:dryvist/nix-pi
+nix flake init -t "github:dryvist/nix-pi?ref=vN"
 ```
 
 Change the values marked `change me` in `flake.nix`, then apply it with
@@ -20,12 +20,12 @@ Or add the module to an existing Home Manager flake:
 
 ```nix
 {
-  inputs.nix-pi.url = "github:dryvist/nix-pi";
+  inputs.nix-pi.url = "github:dryvist/nix-pi?ref=vN";
   # then add inputs.nix-pi.homeModules.default to your Home Manager modules
 }
 ```
 
-To try pi without installing anything: `nix run github:dryvist/nix-pi`.
+To try pi without installing anything: `nix run "github:dryvist/nix-pi?ref=vN"`.
 
 ## Options
 
