@@ -24,7 +24,7 @@ Home Manager's `programs.pi-coding-agent` module lacks.
    values specific to any environment; no API keys inline; none of this
    repository's maintainer files (`.github`, `renovate.json`, `AGENTS.md`).
 5. **One version source.** pi's version is the `llm-agents` input in
-   `flake.lock`; its only writer is `deps-flake-lock.yml` (org policy).
+   `flake.lock`; Renovate updates it through the central `renovate-nix` preset.
 6. Flakes only; conventional commits; branch off `main`.
 
 ## Layout
